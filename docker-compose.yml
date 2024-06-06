@@ -1,0 +1,30 @@
+version: '3'
+
+services:
+  db:
+    image: mysql:8.0
+    volumes:
+      - db_data:/var/lib/mysql # default path of data persistence. Will this work?
+    restart: always
+    environment:
+      MYSQL_PASSWORD: password
+      MYSQL_USER: root
+      MYSQL_DATABASE: account
+    ports:
+      - "3306:3306"
+  api:
+    build:
+      context: .
+    environment:
+      MYSQL_PASSWORD: password
+      MYSQL_DATABASE: account
+      MYSQL_HOST: db
+      MYSQL_PORT: 3306
+      MYSQL_USER: root
+    ports:
+    ## the port on the inside matches the port on the outside
+      - "8080:8080"
+    depends_on:
+      - db
+volumes:
+  db_data:
