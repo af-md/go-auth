@@ -30,6 +30,7 @@ I have included a postman collection in the root directory of the project. You c
 
 - Docker
 - Docker-compose
+- MySQL Workbench
 
 #### Installation:
 
@@ -41,13 +42,16 @@ I have included a postman collection in the root directory of the project. You c
 
     cd go-auth
 
-
 3 - Run the docker script to run the application with Docker:
 
     ./docker_run_dev.sh
 This script will build the Docker image and run the application in a Docker container.
 
-4 - Test the application by using the postman collection in the root directory of the project. Below there is a guide that litsts the baisc endpoints that are exposed.
+4 - Open MySQL Workbench and connect to the database
+
+5 - Load the table.sql into the mysql workbench to create the database, the table, and populate it with some data.
+
+6 - Test the application by using the postman collection in the root directory of the project. Below there is a guide that litsts the baisc endpoints that are exposed.
 
 #### Exposed endpoints that are exposed and their descriptions
 
