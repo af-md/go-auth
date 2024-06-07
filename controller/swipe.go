@@ -2,6 +2,7 @@ package controller
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"go-auth/model"
 	"io"
@@ -27,12 +28,8 @@ type Match struct {
 	Matched bool `json:"matched"`
 }
 
-type SwipeResponseMatched struct {
-	Result Matched `json:"result"`
-}
-
-type SwipeResponseNoMatch struct {
-	Result Match `json:"result"`
+type SwipeResponse struct {
+	Result interface{} `json:"result"`
 }
 
 func Swipe(w http.ResponseWriter, r *http.Request) {
@@ -47,10 +44,10 @@ func Swipe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// extract the email from the context
 	email := r.Context().Value("email").(string)
 	db := r.Context().Value("db").(*gorm.DB)
 	log.Print("email: ", email)
-	// store the user and the swipe in the store
 
 	// get the id of the user using the email from the db
 	user := model.User{}
@@ -99,6 +96,7 @@ func Swipe(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+
 	// check if the user has a match with the swiped user
 	matchCheck := model.Swipe{}
 	// querying for a match
@@ -107,10 +105,9 @@ func Swipe(w http.ResponseWriter, r *http.Request) {
 		log.Print("error checking for match: ", result.Error)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(SwipeResponseNoMatch{Result: Match{Matched: false}})
+		json.NewEncoder(w).Encode(SwipeResponse{Result: Match{Matched: false}})
 		return
 	}
-
 	log.Print("Match found")
 
 	match := model.Match{
@@ -119,13 +116,19 @@ func Swipe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// check if the match already exists
-	checkMatch := model.Match{}
-	result = db.Table("matches").Where("UserId1 = ? AND UserId2 = ?", match.UserId1, match.UserId2).First(&checkMatch)
-	if checkMatch.ID != 0 {
+	matchCheckInMatchTable := model.Match{}
+	match, err = checkMatch(db, matchCheckInMatchTable)
+	if err != nil {
+		log.Print("error checking if match exists: ", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	if match.ID != 0 {
 		log.Print("match record already exists for user with id: ", match.UserId1, " and swiped user id: ", match.UserId2)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(SwipeResponseMatched{Result: Matched{Matched: true, MatchId: match.ID}})
+		json.NewEncoder(w).Encode(SwipeResponse{Result: Matched{Matched: true, MatchId: match.ID}})
 		return
 	}
 
@@ -148,7 +151,7 @@ func Swipe(w http.ResponseWriter, r *http.Request) {
 	// return the match id to the user with matched: true
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(SwipeResponseMatched{Result: Matched{Matched: true, MatchId: match.ID}})
+	json.NewEncoder(w).Encode(SwipeResponse{Result: Matched{Matched: true, MatchId: match.ID}})
 }
 
 func parseRequestBody(r *http.Request, s *SwipeRequest) error {
@@ -183,9 +186,13 @@ func checkSwipeExists(db *gorm.DB, swipe model.Swipe) (model.Swipe, error) {
 	checkSwipe := model.Swipe{}
 	result := db.Table("swipe").Where("UserId = ? AND SwipedUserId = ?", swipe.UserID, swipe.SwipedUserId).First(&checkSwipe)
 	if result.Error != nil {
-		return checkSwipe, result.Error
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			// Record not found, return an empty swipe and nil error
+			return model.Swipe{}, nil
+		}
+		// Other error occurred, return the error
+		return model.Swipe{}, result.Error
 	}
-
 	return checkSwipe, nil
 }
 
@@ -194,6 +201,21 @@ func addSwipeToDB(db *gorm.DB, swipe model.Swipe) error {
 	if result.Error != nil {
 		return result.Error
 	}
-
 	return nil
+}
+
+// are there good consistencies passing models ?? i mean &
+func checkMatch(db *gorm.DB, match model.Match) (model.Match, error) {
+	checkMatch := model.Match{}
+	result := db.Table("matches").Where("UserId1 = ? AND UserId2 = ?", match.UserId1, match.UserId2).First(&checkMatch)
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			// Record not found, return an empty swipe and nil error
+			return model.Match{}, nil
+		}
+		// Other error occurred, return the error
+		return model.Match{}, result.Error
+	}
+
+	return checkMatch, nil
 }

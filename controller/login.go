@@ -21,6 +21,8 @@ type CustomResponse struct {
 	Token   string `json:"token"`
 }
 
+const tokenMessage = "User is logged in, make sure to save and attach the token to the next request as a Bearer token to show that the user is logged in. Without the token the request will be rejected."
+
 func LoginUser(w http.ResponseWriter, r *http.Request) {
 	// get db from context
 
@@ -65,7 +67,7 @@ func LoginUser(w http.ResponseWriter, r *http.Request) {
 	log.Print("token generated: ", token)
 
 	cr := CustomResponse{
-		Message: "User is logged in, make sure to save and attach the token to the next request as a Bearer token to show that the user is logged in. Without the token the request will be rejected.",
+		Message: tokenMessage,
 		Token:   token,
 	}
 

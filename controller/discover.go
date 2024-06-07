@@ -18,8 +18,15 @@ func Discover(w http.ResponseWriter, r *http.Request) {
 	// let get all the profiles from the user tables
 	db := r.Context().Value("db").(*gorm.DB)
 
+	q := r.URL.Query()
+
+	// assume age and gender will always be in the query
+	// assume that when age is queried we want to find all the users of that age and above
+	age := q.Get("age")
+	gender := q.Get("gender")
+
 	var users []model.User
-	db.Find(&users)
+	db.Where("age >= ? AND gender = ?", age, gender).Find(&users)
 
 	if len(users) == 0 {
 		log.Print("discover: no users found when querying the database")
@@ -31,7 +38,6 @@ func Discover(w http.ResponseWriter, r *http.Request) {
 	log.Print("discover: amount of users found: ", len(users))
 
 	// filter based on swipe history
-
 	d := DiscoverResponse{
 		Results: users,
 	}
@@ -39,5 +45,4 @@ func Discover(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(d)
-
 }
