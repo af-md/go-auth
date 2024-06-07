@@ -2,6 +2,7 @@ package controller
 
 import (
 	"encoding/json"
+	"fmt"
 	"go-auth/model"
 	"io"
 	"log"
@@ -17,25 +18,32 @@ type SwipeRequest struct {
 	Preference string `json:"preference"`
 }
 
+type Matched struct {
+	Matched bool `json:"matched"`
+	MatchId uint `json:"matchID"`
+}
+
+type Match struct {
+	Matched bool `json:"matched"`
+}
+
+type SwipeResponseMatched struct {
+	Result Matched `json:"result"`
+}
+
+type SwipeResponseNoMatch struct {
+	Result Match `json:"result"`
+}
+
 func Swipe(w http.ResponseWriter, r *http.Request) {
 
 	var swipeRequest SwipeRequest
 
-	// decode request body into loginRequest
-	b, err := io.ReadAll(r.Body)
+	// parse request body
+	err := parseRequestBody(r, &swipeRequest)
 	if err != nil {
-		log.Print("error reading body: ", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-	}
-
-	err = json.Unmarshal(b, &swipeRequest)
-	if err != nil {
-		http.Error(w, "Invalid Payload Request", http.StatusBadRequest)
-		return
-	}
-
-	if swipeRequest.Preference == "" && swipeRequest.Id == "" {
-		http.Error(w, "Invalid Payload Request", http.StatusBadRequest)
+		log.Print("error parsing request body: ", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -53,6 +61,13 @@ func Swipe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	user, err = getUserByEmail(db, email)
+	if err != nil {
+		log.Print("error getting user by email: ", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
 	conId, err := strconv.ParseUint(swipeRequest.Id, 10, 0)
 	if err != nil {
 		log.Print("error parsing id int uint: ", err)
@@ -63,19 +78,122 @@ func Swipe(w http.ResponseWriter, r *http.Request) {
 	swipe := model.Swipe{
 		UserID:       user.ID,
 		SwipedUserId: uint(conId),
+		Preference:   swipeRequest.Preference,
 	}
-	// store the swipes in the db
-	db.Table("swipe").Create(&swipe)
 
-	// implement and check if there was a match
+	// if the record is not found, the library logs the error automatically for me
+	// check if the swipe already exists
+	checkSwipe, err := checkSwipeExists(db, swipe)
+	if err != nil {
+		log.Print("error checking if swipe exists: ", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
 
-	log.Print("swiped: ", swipeRequest)
+	if checkSwipe.ID == 0 {
+		// add the swipe to the db
+		err = addSwipeToDB(db, swipe)
+		if err != nil {
+			log.Print("error adding swipe to db: ", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+	}
+	// check if the user has a match with the swiped user
+	matchCheck := model.Swipe{}
+	// querying for a match
+	result := db.Table("swipe").Where("UserId = ? AND SwipedUserId = ? AND Preference = ?", swipe.SwipedUserId, swipe.UserID, "Yes").First(&matchCheck)
+	if result.Error != nil {
+		log.Print("error checking for match: ", result.Error)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(SwipeResponseNoMatch{Result: Match{Matched: false}})
+		return
+	}
 
-	// return match template
+	log.Print("Match found")
 
-	// return hello world
+	match := model.Match{
+		UserId1: swipe.UserID,
+		UserId2: swipe.SwipedUserId,
+	}
+
+	// check if the match already exists
+	checkMatch := model.Match{}
+	result = db.Table("matches").Where("UserId1 = ? AND UserId2 = ?", match.UserId1, match.UserId2).First(&checkMatch)
+	if checkMatch.ID != 0 {
+		log.Print("match record already exists for user with id: ", match.UserId1, " and swiped user id: ", match.UserId2)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(SwipeResponseMatched{Result: Matched{Matched: true, MatchId: match.ID}})
+		return
+	}
+
+	// if the user was matched with the swiped user, store in match table
+	result = db.Table("matches").Create(&match)
+	if result.Error != nil {
+		log.Print("error creating match: ", result.Error)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// fetch the the id of the match from the match table using the user id and swiped user id
+	result = db.Table("matches").Where("UserId1 = ? AND UserId2 = ?", match.UserId1, match.UserId2).First(&match)
+	if result.Error != nil {
+		log.Print("error fetching match: ", result.Error)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// return the match id to the user with matched: true
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"message": "swiped"}`))
+	json.NewEncoder(w).Encode(SwipeResponseMatched{Result: Matched{Matched: true, MatchId: match.ID}})
+}
 
+func parseRequestBody(r *http.Request, s *SwipeRequest) error {
+	b, err := io.ReadAll(r.Body)
+	if err != nil {
+		return err
+	}
+
+	err = json.Unmarshal(b, s)
+	if err != nil {
+		return err
+	}
+
+	if s.Preference == "" && s.Id == "" {
+		return fmt.Errorf("empty strings, invalid payload request")
+	}
+
+	return nil
+}
+
+func getUserByEmail(db *gorm.DB, email string) (model.User, error) {
+	user := model.User{}
+	result := db.Table("users").Where("email = ?", email).First(&user)
+	if result.Error != nil {
+		return user, result.Error
+	}
+
+	return user, nil
+}
+
+func checkSwipeExists(db *gorm.DB, swipe model.Swipe) (model.Swipe, error) {
+	checkSwipe := model.Swipe{}
+	result := db.Table("swipe").Where("UserId = ? AND SwipedUserId = ?", swipe.UserID, swipe.SwipedUserId).First(&checkSwipe)
+	if result.Error != nil {
+		return checkSwipe, result.Error
+	}
+
+	return checkSwipe, nil
+}
+
+func addSwipeToDB(db *gorm.DB, swipe model.Swipe) error {
+	result := db.Table("swipe").Create(&swipe)
+	if result.Error != nil {
+		return result.Error
+	}
+
+	return nil
 }
