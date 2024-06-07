@@ -204,6 +204,7 @@ func addSwipeToDB(db *gorm.DB, swipe model.Swipe) error {
 	return nil
 }
 
+
 // are there good consistencies passing models ?? i mean &
 func checkMatch(db *gorm.DB, match model.Match) (model.Match, error) {
 	checkMatch := model.Match{}

@@ -19,17 +19,6 @@ import (
 	// orm
 )
 
-// {
-// 	"result": {
-// 	"id": <integer>,
-// 	"email": <string>,
-// 	"password": <string>,
-// 	"name": <string>,
-// 	"gender": <string>,
-// 	"age": <integer>
-// 	}
-// }
-
 type Claims struct {
 	Email string `json:"email"`
 	jwt.RegisteredClaims
