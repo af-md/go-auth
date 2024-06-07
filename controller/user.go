@@ -77,12 +77,16 @@ func generateRandomUser(db *gorm.DB) (*model.User, error) {
 	age := uint(rand.Intn(30) + 18)
 	gender := genders[rand.Intn(len(genders))]
 
+	// choose a random location
+	n := rand.Intn(100)
+
 	user := &model.User{
 		Name:     name,
 		Email:    email,
 		Password: string(hashedPassword),
 		Age:      age,
 		Gender:   gender,
+		Location: n,
 	}
 
 	if err := db.Create(user).Error; err != nil {

@@ -7,6 +7,7 @@ type User struct {
 	Name     string `gorm:"column:name"`
 	Gender   string `gorm:"column:gender"`
 	Age      uint   `gorm:"column:age"`
+	Location int    `gorm:"column:location"`
 }
 
 type Swipe struct {
